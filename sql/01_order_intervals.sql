@@ -1,10 +1,9 @@
--- 1) Nominalized to order granularity (1 order= 1 row)
 WITH order_totals AS (
   SELECT
     order_id,
     ANY_VALUE(user_id) AS user_id,
     MIN(created_at)    AS order_ts,                     -- Exact Time
-    DATE(MIN(created_at), 'America/New_York') AS order_date,
+    DATE(MIN(created_at)) AS order_date,
     SUM(sale_price)    AS order_total
   FROM `bigquery-public-data.thelook_ecommerce.order_items`
   GROUP BY order_id
@@ -41,6 +40,12 @@ SELECT
   APPROX_QUANTILES(gap_days, 100)[OFFSET(90)] AS p90_days,       -- p90
   ROUND(AVG(gap_days), 2) AS avg_days
 FROM gaps;
+  
+| Row | pairs | p50_days | p90_days | avg_days |
+|-----|-------|----------|----------|----------|
+| 1   | 44693 | 194      | 830      | 323.65   |
+
+
 
 -- Group gaps into bins and examine their frequency (Gaps betweem 0 adn 60)
 WITH total_order AS(
