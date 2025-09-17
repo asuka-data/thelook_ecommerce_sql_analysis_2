@@ -43,15 +43,43 @@ SELECT
 FROM gaps;
 
 -- Group gaps into bins and examine their frequency (Gaps betweem 0 adn 60)
-WITH bins AS (
-  SELECT gap_days
-  FROM gaps
+WITH total_order AS(
+  SELECT 
+    order_id,
+    ANY_VALUE(user_id) AS user_id,
+    MIN(created_at) AS order_ts,
+    DATE(MIN(created_at)) AS order_date,
+    SUM(sale_price) AS order_total
+  FROM bigquery-public-data.thelook_ecommerce.order_items
+  GROUP BY order_id
+),
+users AS(
+  SELECT 
+    user_id,
+    order_ts,
+    order_date,
+    LAG(order_ts)OVER(PARTITION BY user_id ORDER BY order_ts) AS pre_order_ts
+  FROM total_order
+),
+gap AS(
+  SELECT 
+    user_id,
+    order_ts,
+    pre_order_ts,
+    TIMESTAMP_DIFF(order_ts, pre_order_ts, DAY) AS gap_days,
+    TIMESTAMP_DIFF(order_ts, pre_order_ts, HOUR) AS gap_hours
+  FROM users
+  WHERE pre_order_ts IS NOT NULL
+),
+bins AS(
+  SELECT
+    gap_days
+  FROM gap
   WHERE gap_days BETWEEN 0 AND 60
 )
-SELECT
-  gap_days,
-  COUNT(*) AS cnt,
-  SAFE_DIVIDE(COUNT(*), SUM(COUNT(*)) OVER ()) AS pct
+SELECT 
+  gap_days,  
+  COUNT(*) AS total,
+  SAFE_DIVIDE(COUNT(*), SUM(COUNT(*)OVER())) AS pct
 FROM bins
-GROUP BY gap_days
-ORDER BY gap_days;
+
