@@ -85,6 +85,6 @@ bins AS(
 SELECT 
   gap_days,  
   COUNT(*) AS total,
-  SAFE_DIVIDE(COUNT(*), SUM(COUNT(*)OVER())) AS pct
-FROM bins
+  SAFE_DIVIDE(COUNT(*), SUM(COUNT(*)OVER())) AS pct　-- the ratio of purchase possibility in certain gap days 
+FROM bins;
 
