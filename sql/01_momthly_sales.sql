@@ -1,41 +1,47 @@
 ## Monthly sales report
 
 -- Create CTE for faster scanning 
-WITH base AS(
+-- Nominarized order granularity (1 row = 1 order)
+WITH orders AS(
   SELECT 
-    order_id, user_id, DATE_TRUNC(DATE(created_at),MONTH) AS ym, sale_price
+    order_id,
+    ANY_VALUE(user_id) AS user_id, 
+    MIN(created_at)AS order_date_ts,
+    DATE(MIN(created_at)) AS order_date,
+    SUM(sale_price) AS total_sales
   FROM bigquery-public-data.thelook_ecommerce.order_items
-  WHERE sale_price >= 0  --- Exclude return orders
-), 
-monthly_sales AS(
--- Calculate total orders and sales by month
- SELECT 
-   ym,  
-   COUNT(DISTINCT order_id) AS total_order,  -- total order 
-   COUNT(DISTINCT user_id) AS total_user,    -- total user
-   ROUND(SUM(sale_price),3) AS total_sale,   -- total sales
-   SAFE_DIVIDE(SUM(sale_price), COUNT(DISTINCT(order_id)) AS aov     -- average sales
- FROM base
- GROUP BY ym
+  GROUP BY order_id
 ),
-with_prev AS(
-  SELECT
-    monthly_sales.ym,
-    monthly_sales.total_order,
-    monthly_sales.total_user,
-    monthly_sales.total_sale,
-    monthly_sales.aov,
-    LAG(monthly_sales.total_sale)OVER(ORDER BY monthly_sales.ym) AS pre_month
+-- Calculate total orders and sales by month
+monthly_sales AS(
+  SELECT 
+    DATE_TRUNC(order_date, MONTH) AS ym,
+    COUNT(*) AS total_orders,
+    COUNT(DISTINCT user_id) AS total_user,
+    SUM(total_sales) AS monthly_total,
+    SAFE_DIVIDE(SUM(total_sales),NULLIF(COUNT(*),0)) AS aov
+  FROM orders
+  GROUP BY ym
+),
+prev AS(
+  SELECT 
+    ym,
+    total_orders,
+    total_user,
+    monthly_total,
+    aov,
+    LAG(monthly_total)OVER(ORDER BY ym) AS prev_month,
+    LAG(monthly_total,12)OVER(ORDER BY ym) AS prev_year
   FROM monthly_sales
 )
--- Calculate growth rate by month
+-- Calculate MOM, YOY and convert data type into '%'
 SELECT 
-  monthly_sales.ym,
-  monthly_sales.total_order,
-  monthly_sales.total_user,
-  monthly_sales.total_sale,
-  monthly_sales.aov,
-  ROUND(pre_month,2) AS prev_month_sales,  
-  SAFE_DIVIDE(monthly_sales.total_sale - prev_sales, NULLIF(prev_sales,0)) AS growth_rate  
-FROM with_prev
-ORDER BY monthly_sales.ym;
+  ym,
+  total_orders,
+  total_user,
+  monthly_total,
+  ROUND(aov,2) AS aov,
+  CONCAT(ROUND(SAFE_DIVIDE(monthly_total - prev_month, NULLIF(prev_month, 0))*100,2),'%') AS mom,
+  CONCAT(ROUND(SAFE_DIVIDE(monthly_total - prev_year, NULLIF(prev_year,0))*100,2),'%') AS yoy
+FROM prev
+ORDER BY ym;
